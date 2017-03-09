@@ -58,7 +58,7 @@ while ( $client = $server->accept() ) {
     my $daddr      = v4mapped($client->sockhost);
     my $saddr      = v4mapped($client->peerhost);
     my $sport      = $client->peerport;
-    my $connection = "saddr: $saddr; sport: $sport;  daddr: $daddr";
+    my $connection = "saddr: $saddr; sport: $sport; daddr: $daddr";
     logit( { message => "Connection established $connection" } );
 
     my $vnc_version = vnc_handshake();
@@ -111,6 +111,13 @@ sub logit {
     return;
 }
 
+# check for an IPv6 V4MAPPED address and convert to dotted quad if found
+sub v4mapped {
+    my $addr = shift or return;
+    $addr =~ s{ \A ::ffff: }{}ixms;
+    return $addr;
+}
+
 # https://github.com/rfbproto/rfbproto/blob/master/rfbproto.rst
 sub vnc_handshake {
 
@@ -142,11 +149,4 @@ sub vnc_version_3_7 {
 
 sub vnc_version_3_8 {
     return;
-}
-
-# check for an IPv6 V4MAPPED address and convert to dotted quad if found
-sub v4mapped {
-    my $addr = shift or return;
-    $addr =~ s{ \A ::ffff: }{}ixms;
-    return $addr;
 }
