@@ -71,6 +71,7 @@ while ( $client = $server->accept() ) {
         );
         exit 0;
     }
+    # TODO: pick out weird versions, log them and try to accommodate
     if ( $vnc_version !~ m{ RFB[ ]003[.]00[3578][\n] }xms ) {
         logit(
             {
@@ -143,6 +144,7 @@ sub vnc_handshake {
 # TODO: try to go through security types
 #       issue challenge, maybe evaluate later to known common passwords?
 sub vnc_version_3_3 {
+    # TODO: consider random response of None and VNC auth
     my $security_type = pack( 'L', 2 );    # default to VNC Authentication
 
     # XXX: check to make sure send succeeds?
