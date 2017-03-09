@@ -130,7 +130,6 @@ sub v4mapped {
 
 # https://github.com/rfbproto/rfbproto/blob/master/rfbproto.rst
 sub vnc_handshake {
-
     # XXX: check to make sure send succeeds?
     $client->send(RFB_VERSION);
 
@@ -149,7 +148,7 @@ sub vnc_version_3_3 {
     # XXX: check to make sure send succeeds?
     $client->send($security_type);
 
-    # TODO: receive Security type response
+    # TODO: receive security type response
     return;
 }
 
