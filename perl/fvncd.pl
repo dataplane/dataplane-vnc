@@ -59,7 +59,7 @@ while ( $client = $server->accept() ) {
     my $saddr      = v4mapped($client->peerhost);
     my $sport      = $client->peerport;
     my $connection = "saddr: $saddr; sport: $sport; daddr: $daddr";
-    logit( { message => "Connection established $connection" } );
+    logit( { message => "connection $connection" } );
 
     my $vnc_version = vnc_handshake();
     if (!$vnc_version) {
