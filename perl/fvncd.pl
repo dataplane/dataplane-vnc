@@ -2,10 +2,6 @@
 use strict;
 use warnings;
 
-use feature qw(switch);
-no warnings 'experimental::smartmatch';
-
-use English;
 use IO::Socket::IP;
 use POSIX qw( setsid);
 use Sys::Syslog qw( :standard :macros );
@@ -20,7 +16,7 @@ use constant SYSLOG_SERVER   => '127.0.0.1';
 
 use constant RFB_VERSION => "RFB 003.008\n";
 
-$OUTPUT_AUTOFLUSH = 1;
+$|++;  # autoflush
 $SIG{CHLD} = 'IGNORE';    # to avoid having defunct children around
 
 #NOTE: uses one v6 socket for compatibility and simplicity
@@ -86,12 +82,13 @@ while ( $client = $server->accept() ) {
     logit( { message => "ProtocolVersion $vnc_version $connection" } );
 
     # TODO: work in progress
-    given ($vnc_version) {
-        when ('3.3') { vnc_version_3_3(); }
-        when ('3.5') { vnc_version_3_3(); }    # buggy client, treat as 3.3
-        when ('3.7') { vnc_version_3_7(); }
-        when ('3.8') { vnc_version_3_8(); }
-    }
+    my %select_version = (
+	'3.3' => \&vnc_version_3_3(),
+	'3.5' => \&vnc_version_3_3(),    # buggy client, treat as 3.3
+	'3.7' => \&vnc_version_3_7(),
+	'3.8' => \&vnc_version_3_8(),
+    );
+    $select_version{$vnc_version}->();
 
     exit 0;
 }
