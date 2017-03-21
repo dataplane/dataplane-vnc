@@ -2,6 +2,7 @@
 use strict;
 use warnings;
 
+use Getopt::Std;
 use IO::Socket::IP;
 use POSIX qw( setsid);
 use Sys::Syslog qw( :standard :macros );
@@ -16,17 +17,25 @@ use constant SYSLOG_SERVER   => '127.0.0.1';
 
 use constant RFB_VERSION => "RFB 003.008\n";
 
-$|++;  # autoflush
+$|++;    # autoflush
 $SIG{CHLD} = 'IGNORE';    # to avoid having defunct children around
 
+getopts( 'p:', \my %opts );
+
+my $dport = $opts{p} || LISTENER_PORT;
+($dport) = $dport =~ m{ \A (\d{1,5}) \z }xms;
+die '-p dport setting invalid'      if not defined($dport);
+die '-p dport setting out of range' if $dport < 1 || $dport > 65535;
+die 'root privs required'           if $dport < 1024 && $> != 0;
+
 my $server = IO::Socket::IP->new(
-    LocalHost    => '::',   # use one v6 socket for simplicity
+    LocalHost    => '::',              # use one v6 socket for simplicity
     Reuse        => 1,
     V6Only       => 0,
-    LocalService => LISTENER_PORT,
+    LocalService => $dport,
     Type         => SOCK_STREAM,
     Listen       => MAX_CONNECTIONS,
-) or die "Could not open port " . LISTENER_PORT . " : $@\n";
+) or die "Could not open port $dport : $@\n";
 
 # initialize syslog
 $Sys::Syslog::host = SYSLOG_SERVER;
@@ -50,25 +59,26 @@ while ( $client = $server->accept() ) {
     setsockopt( $client, SOL_SOCKET, SO_RCVTIMEO, pack( 'l!l!', 10, 0 ) );
     $client->autoflush(1);
 
-    my $daddr   = v4mapped( $client->sockhost );
-    my $saddr   = v4mapped( $client->peerhost );
-    my $sport   = $client->peerport;
-    $connection = "saddr: $saddr; sport: $sport; daddr: $daddr";
-    logit( { message => "connection $connection" } );
+    my $daddr = v4mapped( $client->sockhost );
+    my $saddr = v4mapped( $client->peerhost );
+    my $sport = $client->peerport;
+    $connection = "saddr: $saddr; sport: $sport; daddr: $daddr; dport: $dport;";
+    logit( { message => "$connection new connection" } );
 
+    # https://github.com/rfbproto/rfbproto/blob/master/rfbproto.rst
     my $vnc_version = vnc_handshake();
     if ( $vnc_version !~ m{ \A RFB [ ] \d{3} [.] \d{3} [\n] \z }xms ) {
         logit(
             {
                 priority => LOG_WARNING,
-                message => "invalid ProtocolVersion handshake; $connection"
+                message  => "$connection vnc_version invalid"
             }
         );
         exit 0;
     }
 
     $vnc_version =~ s{ [RFB\s]+ }{}gmxs;    # xxx.yyy is all we need now
-    logit( { message => "ProtocolVersion $vnc_version; $connection" } );
+    logit( { message => "$connection ProtocolVersion $vnc_version" } );
 
     $vnc_version = normalize_vnc_version($vnc_version);
 
@@ -76,7 +86,7 @@ while ( $client = $server->accept() ) {
         '3.3' => \&vnc_version_3_3,
         '3.7' => \&vnc_version_3_7,
         '3.8' => \&vnc_version_3_8,
-        'UNK' => \&vnc_version_unk,   # unknown / unsupported version
+        'UNK' => \&vnc_version_unk,         # unknown / unsupported version
     );
     $select_version{$vnc_version}->();
 
@@ -116,14 +126,13 @@ sub v4mapped {
     return $addr;
 }
 
-# https://github.com/rfbproto/rfbproto/blob/master/rfbproto.rst
 sub vnc_handshake {
     my $sent = $client->send(RFB_VERSION);
     if ( not defined $sent ) {
         logit(
             {
                 priority => LOG_WARNING,
-                message  => "send failure vnc_handshake; $connection"
+                message  => "$connection vnc_hankshake send failure"
             }
         );
         exit 0;
@@ -136,7 +145,7 @@ sub vnc_handshake {
         logit(
             {
                 priority => LOG_WARNING,
-                message  => "recv timeout vnc_handshake; $connection"
+                message  => "$connection vnc_handshake recv timeout"
             }
         );
         exit 0;
@@ -146,7 +155,7 @@ sub vnc_handshake {
         logit(
             {
                 priority => LOG_WARNING,
-                message  => "invalid version length vnc_handshake; $connection"
+                message  => "$connection vnc_handshake version length invalid"
             }
         );
         exit 0;
@@ -162,14 +171,14 @@ sub normalize_vnc_version {
     return '3.7' if $version eq '003.007';
     return '3.8' if $version eq '003.008';
 
-    # other priority versions exist, but we do not currently support them
+    # other proprietary versions exist, but we do not currently support them
     return 'UNK';
 }
 
 sub vnc_version_3_3 {
-# TODO: randomize vnc and none auth?
-# TODO call a sec function?
+
     # default Authentication type None
+    # XXX: randomize vnc and none auth?
     my $security_type = pack( 'N', 0x00000001 );
 
     my $sent = $client->send($security_type);
@@ -177,7 +186,7 @@ sub vnc_version_3_3 {
         logit(
             {
                 priority => LOG_WARNING,
-                message  => "send failure vnc_version_3_3; $connection"
+                message  => "$connection vnc_version_3_3 send failure"
             }
         );
         exit 0;
@@ -189,24 +198,25 @@ sub vnc_version_3_3 {
 }
 
 sub vnc_version_3_7 {
-#TODO: return security_type negotiated and then do something
+
+    #TODO: return security_type negotiated and then do something
     security_negotiation('3_7');
     return;
 }
 
 sub vnc_version_3_8 {
-#TODO: return security_type negotiated and then do something
+
+    #TODO: return security_type negotiated and then do something
     security_negotiation('3_8');
     return;
 }
 
-
+# version is unknown, unsupported, or unreliable
 sub vnc_version_unk {
-    # version is unknown and unreliable
     logit(
         {
             priority => LOG_WARNING,
-            message  => "unsupported client vnc_version_unk; $connection"
+            message  => "$connection vnc_version_unk unnsupported client"
         }
     );
     exit 0;
@@ -215,14 +225,14 @@ sub vnc_version_unk {
 }
 
 sub client_init {
-    my $shared_flag; 
+    my $shared_flag;
     my $received = $client->recv( $shared_flag, 1 );
 
     if ( not defined $received ) {
         logit(
             {
                 priority => LOG_WARNING,
-                message  => "recv timeout client_init; $connection"
+                message  => "$connection client_init recv timeout"
             }
         );
         exit 0;
@@ -232,7 +242,7 @@ sub client_init {
         logit(
             {
                 priority => LOG_WARNING,
-                message  => "null shared_flag client_init; $connection"
+                message  => "$connection client_init shared_flag null"
             }
         );
         exit 0;
@@ -241,19 +251,20 @@ sub client_init {
     ($shared_flag) = unpack( 'C', $shared_flag );
 
     if ( $shared_flag == 0 ) {
-        logit( { message => "client wants exclusive access; $connection" } );
+        logit( { message => "$connection client wants exclusive access" } );
     }
     else {
-        logit( { message => "client wants shared access; $connection" } );
+        logit( { message => "$connection client wants shared access" } );
     }
 
     return;
 }
 
-sub security_negotation {
+sub security_negotiation {
     my $version = shift or return;
 
     # bytes are: 3 types, none, vnc, apple remote desktop
+    #XXX: remove apple remote desktop since we don't support the client ver?
     my $sectypes = pack( "N", 0x0301021E );
 
     my $sent = $client->send($sectypes);
@@ -261,20 +272,20 @@ sub security_negotation {
         logit(
             {
                 priority => LOG_WARNING,
-                message  => "send failure vnc_version_$version; $connection"
+                message  => "$connection security_negotiation send failure"
             }
         );
         exit 0;
     }
 
-    my $sectype; 
+    my $sectype;
     my $received = $client->recv( $sectype, 1 );
 
     if ( not defined $received ) {
         logit(
             {
                 priority => LOG_WARNING,
-                message  => "recv timeout vnc_version_$version; $connection"
+                message  => "$connection security_negotiation recv timeout"
             }
         );
         exit 0;
@@ -284,15 +295,17 @@ sub security_negotation {
         logit(
             {
                 priority => LOG_WARNING,
-                message  => "null sectype vnc_version_$version; $connection"
+                message =>
+                  "$connection security_negotiation sectype length null"
             }
         );
         exit 0;
     }
-#TODO
-    logit( { message => "client sectype $sectype; $connection" } );
+
+    #TODO: how should this look?
+    logit( { message => "$connection client sectype $sectype" } );
     ($sectype) = unpack( 'C', $sectype );
-    logit( { message => "client sectype $sectype (unpacked); $connection" } );
- 
+    logit( { message => "$connection client sectype $sectype (unpacked)" } );
+
     return;
 }
