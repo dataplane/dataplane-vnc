@@ -302,10 +302,8 @@ sub security_negotiation {
         exit 0;
     }
 
-    #TODO: how should this look?
-    logit( { message => "$connection client sectype $sectype" } );
     ($sectype) = unpack( 'C', $sectype );
-    logit( { message => "$connection client sectype $sectype (unpacked)" } );
+    logit( { message => "$connection client sectype $sectype" } );
 
     return;
 }
