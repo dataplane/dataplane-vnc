@@ -150,10 +150,9 @@ sub create_pid {
 }
 
 sub terminate {
-    close $server;
-    closelog();
-
     if ( $$ == $pid ) {
+        close $server;
+        closelog();
         unlink $pidfile or die "Can't remove $pidfile: $!";
     }
 
