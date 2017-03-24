@@ -269,7 +269,6 @@ sub vnc_version_unk {
             message  => "$connection vnc_version_unk unnsupported client"
         }
     );
-    exit 0;
 
     return;
 }
