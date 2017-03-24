@@ -2,8 +2,8 @@
 use strict;
 use warnings;
 
-use Getopt::Std;
 use File::Basename;
+use Getopt::Std;
 use IO::Socket::IP;
 use POSIX qw( setsid);
 use Sys::Syslog qw( :standard :macros );
@@ -20,16 +20,17 @@ use constant PID_FILE => '/var/run/fvnc/fvncd.pid';
 
 use constant RFB_VERSION => "RFB 003.008\n";
 
-use constant USAGE => "usage: $0 [-h] [-p port]
+use constant USAGE => "usage: $0 [-h] [-p port] [-6]
         -h: this message
         -l: listener port (default=" . LISTENER_PORT . ")
-        -p: pidfile (default=" . PID_FILE . ")\n";
+        -p: pidfile (default=" . PID_FILE . ")
+        -6: enable IPv6 listener\n";
 
 local $SIG{CHLD} = 'IGNORE';    # to avoid having defunct children around
 
 $|++;    # autoflush
 
-getopts( 'hl:p:', \my %opts );
+getopts( '6hl:p:', \my %opts );
 die USAGE if $opts{h};
 
 my $pidfile = $opts{p} || PID_FILE;
@@ -41,7 +42,7 @@ if ( not defined $pidfile ) {
 }
 my $base_dir = dirname $pidfile;
 if ( ! -w $base_dir ) {
-    die "Can't writ eto base directory: $base_dir";
+    die "Can't write to base directory: $base_dir";
 }
 if ( -e $pidfile && ! -w $pidfile ) {
     die "existing pidfile not writeable; $pidfile";
@@ -53,13 +54,17 @@ die '-p dport setting invalid'      if not defined($dport);
 die '-p dport setting out of range' if $dport < 1 || $dport > 65535;
 die 'root privs required'           if $dport < 1024 && $> != 0;
 
-my $pid = $$;
+# it is easier to have a single socket listener
+# will transform IPV4MAPPED if v6 listener is enabled and client is v4
+my $localhost = $opts{6} ? '::' : '0.0.0.0';
+
 daemonize();
+my $pid = $$;
 create_pid();
 local $SIG{TERM} = \&terminate;
 
 my $server = IO::Socket::IP->new(
-    LocalHost    => '::',              # use one v6 socket for simplicity
+    LocalHost    => $localhost,
     Reuse        => 1,
     V6Only       => 0,
     LocalService => $dport,
@@ -127,19 +132,19 @@ exit 0;
 # http://stackoverflow.com/questions/1518923/how-can-i-create-a-tcp-server-daemon-process-in-perl
 sub daemonize {
     chdir '/' or die "Can't chdir to /: $!";
-    open STDIN,  '<', '/dev/null'  or die "Can't read /dev/null: $!";
+    open STDIN, '<', '/dev/null'  or die "Can't read /dev/null: $!";
     open STDOUT, '>', '/dev/null' or die "Can't write to /dev/null: $!";
-    defined( my $pid = fork ) or die "Can't fork: $!";
-    exit if $pid;
+    defined( my $_pid = fork ) or die "Can't fork: $!";
+    exit if $_pid;
     setsid or die "Can't start a new session: $!";
     open STDERR, '>&STDOUT' or die "Can't dup stdout: $!";
     return;
 }
 
 sub create_pid {
-    my $pid = $$;
+    my $_pid = $$;
     open my $fd, '>', $pidfile or die "Can't write $pidfile: $!";
-    print $fd $pid;
+    print $fd $_pid;
     close $fd or die "Can't close $pidfile: $!";
     return;
 }
@@ -265,6 +270,7 @@ sub vnc_version_unk {
             message  => "$connection vnc_version_unk unnsupported client"
         }
     );
+    exit 0;
 
     return;
 }

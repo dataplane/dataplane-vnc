@@ -1,0 +1,140 @@
+#! /bin/sh
+
+### BEGIN INIT INFO
+# Provides:		dataplane-vnc
+# Required-Start:	$remote_fs $syslog
+# Required-Stop:	$remote_fs $syslog
+# Default-Start:	2 3 4 5
+# Default-Stop:		
+# Short-Description:	Fake VNC server (DataPlane custom)
+### END INIT INFO
+
+set -e
+
+# /etc/init.d/dataplane-vnc: start and stop the Fake VNC daemon
+
+test -x /usr/local/bin/fvncd.pl || exit 0
+#( /usr/local/bin/fvncd.pl -h 2>&1 | grep -q fvncd ) 2>/dev/null || exit 0
+
+umask 022
+
+if test -f /etc/default/fvncd; then
+    . /etc/default/fvncd
+fi
+
+. /lib/lsb/init-functions
+
+if [ -n "$2" ]; then
+    FVNCD_OPTS="$FVNCD_OPTS $2"
+fi
+
+# Are we running from init?
+run_by_init() {
+    ([ "$previous" ] && [ "$runlevel" ]) || [ "$runlevel" = S ]
+}
+
+check_for_upstart() {
+    if init_is_upstart; then
+	exit $1
+    fi
+}
+
+check_for_no_start() {
+    # forget it if we're trying to start, and /usr/local/etc/fvnc/fvncd_not_to_be_run exists
+    if [ -e /usr/local/etc/fvnc/fvncd_not_to_be_run ]; then 
+	if [ "$1" = log_end_msg ]; then
+	    log_end_msg 0 || true
+	fi
+	if ! run_by_init; then
+	    log_action_msg "Fake VNC server not in use (/usr/local/etc/fvnc/fvncd_not_to_be_run)" || true
+	fi
+	exit 0
+    fi
+}
+
+check_pid_dir() {
+    # create the pid directory if necessary
+    if [ ! -d /var/run/fvnc ]; then
+        mkdir /var/run/fvnc
+        chown daemon:daemon /var/run/fvnc
+    fi
+}
+
+export PATH="${PATH:+$PATH:}/usr/local/sbin:/usr/sbin:/sbin"
+
+case "$1" in
+  start)
+	check_for_upstart 1
+	check_pid_dir
+	check_for_no_start
+	log_daemon_msg "Starting Fake VNC server" "fvncd" || true
+	if start-stop-daemon --start --quiet --oknodo --pidfile /var/run/fvnc/fvncd.pid --chuid daemon --exec /usr/bin/perl --startas /usr/local/bin/fvncd.pl -- $FVNCD_OPTS; then
+	    log_end_msg 0 || true
+	else
+	    log_end_msg 1 || true
+	fi
+	;;
+
+  stop)
+	check_for_upstart 0
+	log_daemon_msg "Stopping Fake VNC server" "fvncd" || true
+	if start-stop-daemon --stop --quiet --oknodo --pidfile /var/run/fvnc/fvncd.pid; then
+	    log_end_msg 0 || true
+	else
+	    log_end_msg 1 || true
+	fi
+	;;
+
+  restart)
+	check_for_upstart 1
+	check_pid_dir
+	log_daemon_msg "Restarting Fake VNC server" "fvncd" || true
+	start-stop-daemon --stop --quiet --oknodo --retry 30 --pidfile /var/run/fvnc/fvncd.pid
+	check_for_no_start log_end_msg
+	if start-stop-daemon --start --quiet --oknodo --pidfile /var/run/fvnc/fvncd.pid --chuid daemon --exec /usr/bin/perl --startas /usr/local/bin/fvncd.pl -- $FVNCD_OPTS; then
+	    log_end_msg 0 || true
+	else
+	    log_end_msg 1 || true
+	fi
+	;;
+
+  try-restart)
+	check_for_upstart 1
+	check_pid_dir
+	log_daemon_msg "Restarting Fake VNC server" "fvncd" || true
+	RET=0
+	start-stop-daemon --stop --quiet --retry 30 --pidfile /var/run/fvnc/fvncd.pid || RET="$?"
+	case $RET in
+	    0)
+		# old daemon stopped
+		check_for_no_start log_end_msg
+		if start-stop-daemon --start --quiet --oknodo --pidfile /var/run/fvnc/fvncd.pid --chuid daemon --exec /usr/bin/perl --startas /usr/local/bin/fvncd.pl -- $FVNCD_OPTS; then
+		    log_end_msg 0 || true
+		else
+		    log_end_msg 1 || true
+		fi
+		;;
+	    1)
+		# daemon not running
+		log_progress_msg "(not running)" || true
+		log_end_msg 0 || true
+		;;
+	    *)
+		# failed to stop
+		log_progress_msg "(failed to stop)" || true
+		log_end_msg 1 || true
+		;;
+	esac
+	;;
+
+  status)
+	check_for_upstart 1
+	status_of_proc -p /var/run/fvnc/fvncd.pid /usr/local/bin/fvncd.pl fvncd.pl && exit 0 || exit $?
+	;;
+
+  *)
+	log_action_msg "Usage: /etc/init.d/dataplane-vnc {start|stop|reload|force-reload|restart|try-restart|status}" || true
+	exit 1
+esac
+
+exit 0
