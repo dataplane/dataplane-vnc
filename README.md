@@ -1,4 +1,7 @@
 # dataplane-vnc
-data plane VNC server daemon
+DataPlane VNC server daemon
 
-Original C code written for DRG by Sangkun Noh as GNU GPL version 3.
+dataplane-vnc is a minimal VNC server daemon.  it listens on TCP port
+5900 by default (IPv4 as well as IPv6 if available).  It logs all
+incoming VNC connection attempts and initial RFB protocol message
+exchanges to syslog.
