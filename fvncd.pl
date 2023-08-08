@@ -16,7 +16,7 @@ use constant SYSLOG_IDENT    => 'fvncd';
 use constant SYSLOG_PRIORITY => 'LOG_INFO';
 use constant SYSLOG_SERVER   => '127.0.0.1';
 
-use constant PID_FILE => '/var/run/fvnc/fvncd.pid';
+use constant PID_FILE => '/run/fvnc/fvncd.pid';
 
 use constant RFB_VERSION => "RFB 003.008\n";
 
